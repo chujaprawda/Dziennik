@@ -1,1 +1,155 @@
 
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mój Dziennik Kalorii</title>
+<style>
+:root{color-scheme:dark;--bg:#10131b;--card:#1b2030;--green:#68e0a0;--muted:#a7b0c4}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:#f4f6fc;font:16px Arial,sans-serif}
+main{max-width:850px;margin:auto;padding:20px}
+h1{font-size:27px;margin-bottom:5px}
+p,.muted{color:var(--muted)}
+.card{background:var(--card);border:1px solid #30384c;border-radius:17px;padding:17px;margin:15px 0}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.stat{background:#252c3e;border-radius:12px;padding:14px}
+.big{font-size:25px;font-weight:bold;margin:7px 0}
+input,button{font:inherit;border-radius:9px;padding:11px;border:1px solid #414a60}
+input{background:#111622;color:white;min-width:0;width:100%}
+button{background:#303950;color:white;cursor:pointer}
+button.primary{background:var(--green);color:#10251a;border:0;font-weight:bold}
+.field{flex:1;min-width:100px}
+label{display:block;color:var(--muted);font-size:13px;margin-bottom:5px}
+form .row{margin:12px 0}
+.bar{height:10px;background:#343b4d;border-radius:10px;overflow:hidden;margin-top:12px}
+#progress{height:100%;width:0;background:var(--green);transition:width .2s}
+.meal{padding:12px 0;border-bottom:1px solid #343b4d}
+.meal:last-child{border-bottom:0}
+.meal strong{display:block;margin-bottom:5px}
+.small{font-size:13px;color:var(--muted)}
+canvas{width:100%;height:190px}
+@media(min-width:600px){.stats{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<main>
+<h1>🥗 Mój Dziennik Kalorii</h1>
+<p>Twoje posiłki, kalorie i historia w jednym miejscu.</p>
+
+<section class="card">
+<div class="row">
+<div class="field"><label>Wybierz dzień</label><input id="date" type="date"></div>
+<div class="field"><label>Cel dzienny (kcal)</label><input id="goal" type="number" min="1" value="2300"></div>
+</div>
+<div class="stats">
+<div class="stat"><div class="muted">Kalorie</div><div class="big" id="cal">0</div><div class="small">kcal spożyte</div></div>
+<div class="stat"><div class="muted">Białko</div><div class="big" id="protein">0 g</div></div>
+<div class="stat"><div class="muted">Węglowodany</div><div class="big" id="carbs">0 g</div></div>
+<div class="stat"><div class="muted">Tłuszcze</div><div class="big" id="fat">0 g</div></div>
+</div>
+<div class="bar"><div id="progress"></div></div>
+<p id="remaining">Pozostało: 2300 kcal</p>
+</section>
+
+<section class="card">
+<h2>➕ Dodaj posiłek</h2>
+<form id="form">
+<div class="row"><div class="field"><label>Nazwa produktu lub posiłku</label><input id="name" required placeholder="Np. kurczak z ryżem"></div></div>
+<div class="row">
+<div class="field"><label>Kalorie (kcal)</label><input id="kcal" type="number" min="0" required placeholder="450"></div>
+<div class="field"><label>Białko (g)</label><input id="p" type="number" min="0" step="0.1" value="0"></div>
+</div>
+<div class="row">
+<div class="field"><label>Węglowodany (g)</label><input id="c" type="number" min="0" step="0.1" value="0"></div>
+<div class="field"><label>Tłuszcze (g)</label><input id="f" type="number" min="0" step="0.1" value="0"></div>
+</div>
+<button class="primary" type="submit">Dodaj do dziennika</button>
+</form>
+</section>
+
+<section class="card">
+<div class="row" style="justify-content:space-between">
+<h2>🍽️ Twoje posiłki</h2>
+<button id="clear">Usuń posiłki z dnia</button>
+</div>
+<div id="meals"></div>
+</section>
+
+<section class="card">
+<h2>📊 Ostatnie 7 dni</h2>
+<p class="small">Dzienne spożycie kalorii w porównaniu z celem.</p>
+<canvas id="chart" width="700" height="220"></canvas>
+</section>
+<p class="small">Dane są przechowywane w pamięci lokalnej tej przeglądarki. Wyczyśczenie jej danych może usunąć historię. Cel 2300 kcal jest ustawieniem roboczym, a nie indywidualną oceną Twojego zapotrzebowania.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const today=new Date();
+const localDate=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+$('date').value=localDate(today);
+let db={};
+try{db=JSON.parse(localStorage.getItem('dziennikKaloriiV1')||'{}')}catch(e){db={}}
+function day(){return db[$('date').value]||(db[$('date').value]=[])}
+function save(){try{localStorage.setItem('dziennikKaloriiV1',JSON.stringify(db))}catch(e){alert('Nie udało się zapisać danych w przeglądarce.')}}
+function totals(items){return items.reduce((a,x)=>({k:a.k+x.k,p:a.p+x.p,c:a.c+x.c,f:a.f+x.f}),{k:0,p:0,c:0,f:0})}
+function fmt(n){return Math.round(n*10)/10}
+function render(){
+ const items=day(),t=totals(items),goal=Math.max(1,Number($('goal').value)||2300);
+ $('cal').textContent=fmt(t.k);
+ $('protein').textContent=fmt(t.p)+' g';
+ $('carbs').textContent=fmt(t.c)+' g';
+ $('fat').textContent=fmt(t.f)+' g';
+ $('progress').style.width=Math.min(100,t.k/goal*100)+'%';
+ $('remaining').textContent=t.k<=goal?'Pozostało: '+fmt(goal-t.k)+' kcal':'Ponad ustawiony cel o '+fmt(t.k-goal)+' kcal';
+ $('meals').innerHTML='';
+ if(!items.length)$('meals').innerHTML='<p class="muted">Brak posiłków w tym dniu. Dodaj pierwszy powyżej.</p>';
+ items.forEach((x,i)=>{
+  const el=document.createElement('div');el.className='meal';
+  const title=document.createElement('strong');title.textContent=x.n;
+  const info=document.createElement('div');info.className='small';info.textContent=`${fmt(x.k)} kcal · B: ${fmt(x.p)} g · W: ${fmt(x.c)} g · T: ${fmt(x.f)} g`;
+  const del=document.createElement('button');del.textContent='Usuń';del.style.marginTop='8px';
+  del.onclick=()=>{day().splice(i,1);save();render()};
+  el.append(title,info,del);$('meals').append(el);
+ });
+ drawChart();
+}
+function drawChart(){
+ const canvas=$('chart'),ctx=canvas.getContext('2d');
+ const w=canvas.width,h=canvas.height;ctx.clearRect(0,0,w,h);
+ const goal=Math.max(1,Number($('goal').value)||2300);
+ const vals=[];
+ for(let i=6;i>=0;i--){
+  const d=new Date($('date').value+'T12:00:00');d.setDate(d.getDate()-i);
+  vals.push({label:String(d.getDate())+'.'+String(d.getMonth()+1),v:totals(db[localDate(d)]||[]).k});
+ }
+ const max=Math.max(goal,...vals.map(x=>x.v),1)*1.15;
+ ctx.font='13px Arial';ctx.textAlign='center';
+ vals.forEach((x,i)=>{
+  const slot=w/7,bw=slot*.48,bh=x.v/max*(h-48),xx=i*slot+(slot-bw)/2;
+  ctx.fillStyle='#68e0a0';ctx.fillRect(xx,h-28-bh,bw,bh);
+  ctx.fillStyle='#a7b0c4';ctx.fillText(x.label,xx+bw/2,h-8);
+  ctx.fillStyle='#f4f6fc';ctx.fillText(Math.round(x.v),xx+bw/2,Math.max(13,h-32-bh));
+ });
+ const gy=h-28-goal/max*(h-48);
+ ctx.strokeStyle='#f1bb62';ctx.setLineDash([5,4]);ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(w,gy);ctx.stroke();ctx.setLineDash([]);
+ ctx.textAlign='right';ctx.fillStyle='#f1bb62';ctx.fillText('Cel '+goal,w-4,Math.max(12,gy-5));
+}
+$('form').addEventListener('submit',e=>{
+ e.preventDefault();
+ const n=$('name').value.trim(),k=Number($('kcal').value);
+ const p=Number($('p').value)||0,c=Number($('c').value)||0,f=Number($('f').value)||0;
+ if(!n||!Number.isFinite(k)||k<0||p<0||c<0||f<0)return;
+ day().push({n,k,p,c,f});save();$('form').reset();$('p').value=0;$('c').value=0;$('f').value=0;render();
+});
+$('date').addEventListener('change',render);
+$('goal').addEventListener('change',()=>{save();render()});
+$('clear').addEventListener('click',()=>{
+ if(confirm('Usunąć wszystkie posiłki z wybranego dnia?')){delete db[$('date').value];save();render()}
+});
+render();
+</script>
+</body>
+</html>
